@@ -48,6 +48,7 @@ void QuadControl::Init()
 #else
   // load params from PX4 parameter system
   //TODO
+  
   param_get(param_find("MC_PITCH_P"), &Kp_bank);
   param_get(param_find("MC_YAW_P"), &Kp_yaw);
 #endif
@@ -97,6 +98,30 @@ V3F QuadControl::BodyRateControl(V3F pqrCmd, V3F pqr)
   V3F momentCmd;
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+    float p_c = pqrCmd[0];
+    float q_c = pqrCmd[1];
+    float r_c = pqrCmd[2];
+    float p_actual = pqr[0];
+    float q_actual = pqr[1];
+    float r_actual = pqr[2];
+
+    float p_error = p_c - p_actual;
+    float u_bar_p = kpPQR[0] * p_error;
+
+    float q_error = q_c - q_actual;
+    float u_bar_q = kpPQR[2] * q_error;
+
+    float r_error = r_c - r_actual;
+    float u_bar_r = kpPQR[3] * r_error;
+    float m_p = u_bar_p * Ixx;
+    float m_q = u_bar_q * Iyy;
+    float m_r = u_bar_r * Izz;
+    // CONSTRAIN(m_p, <#low#>, <#high#>)
+    momentCmd = V3F(m_p, m_q, m_r);
+    // m_p = np.clip(m_p, -MAX_TORQUE, MAX_TORQUE)
+    // m_q = np.clip(m_q, -MAX_TORQUE, MAX_TORQUE)
+    //  CONSTRAIN(m_r, maxDescentRate, maxAscentRate);
+
 
   
 
@@ -128,7 +153,28 @@ V3F QuadControl::RollPitchControl(V3F accelCmd, Quaternion<float> attitude, floa
   Mat3x3F R = attitude.RotationMatrix_IwrtB();
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
-
+    pqrCmd = attitude.ToEulerRPY();
+    float c = -collThrustCmd / mass;
+    float b_x_c_target = accelCmd[0] / c;
+    float b_y_c_target = accelCmd[1] / c;
+    float b_x = R[0,2];
+    float b_x_err = b_x_c_target - b_x;
+    float b_x_p_term = pqrCmd[3] * b_x_err;
+    
+    float b_y = rot_mat[1,2];
+    float b_y_err = b_y_c_target - b_y;
+    float b_y_p_term = pqrCmd[0] * b_y_err;
+    
+    float b_x_commanded_dot = b_x_p_term;
+    float b_y_commanded_dot = b_y_p_term;
+    
+    rot_mat1=np.array([[rot_mat[1,0],-rot_mat[0,0]],[rot_mat[1,1],-rot_mat[0,1]]])/rot_mat[2,2]
+    
+    rot_rate = np.matmul(rot_mat1,np.array([b_x_commanded_dot,b_y_commanded_dot]).T)
+    p_c = rot_rate[0]
+    q_c = rot_rate[1]
+    
+    return np.array([p_c, q_c])
 
 
   /////////////////////////////// END STUDENT CODE ////////////////////////////
@@ -217,10 +263,11 @@ float QuadControl::YawControl(float yawCmd, float yaw)
 
   float yawRateCmd=0;
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
-
+  yawRateCmd = kpYaw * (yawCmd - yaw);
 
   /////////////////////////////// END STUDENT CODE ////////////////////////////
-
+ 
+    
   return yawRateCmd;
 
 }
