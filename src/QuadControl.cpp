@@ -98,29 +98,27 @@ V3F QuadControl::BodyRateControl(V3F pqrCmd, V3F pqr)
   V3F momentCmd;
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
-    float p_c = pqrCmd[0];
-    float q_c = pqrCmd[1];
-    float r_c = pqrCmd[2];
-    float p_actual = pqr[0];
-    float q_actual = pqr[1];
-    float r_actual = pqr[2];
+    float p_c = pqrCmd.x;
+    float q_c = pqrCmd.y;
+    float r_c = pqrCmd.z;
+    float p_actual = pqr.x;
+    float q_actual = pqr.y;
+    float r_actual = pqr.z;
 
     float p_error = p_c - p_actual;
-    float u_bar_p = kpPQR[0] * p_error;
+    float u_bar_p = kpPQR.x * p_error;
 
     float q_error = q_c - q_actual;
-    float u_bar_q = kpPQR[2] * q_error;
+    float u_bar_q = kpPQR.y * q_error;
 
     float r_error = r_c - r_actual;
-    float u_bar_r = kpPQR[3] * r_error;
+    float u_bar_r = kpPQR.z * r_error;
     float m_p = u_bar_p * Ixx;
     float m_q = u_bar_q * Iyy;
     float m_r = u_bar_r * Izz;
     // CONSTRAIN(m_p, <#low#>, <#high#>)
     momentCmd = V3F(m_p, m_q, m_r);
-    // m_p = np.clip(m_p, -MAX_TORQUE, MAX_TORQUE)
-    // m_q = np.clip(m_q, -MAX_TORQUE, MAX_TORQUE)
-    //  CONSTRAIN(m_r, maxDescentRate, maxAscentRate);
+   
 
 
   
@@ -153,29 +151,35 @@ V3F QuadControl::RollPitchControl(V3F accelCmd, Quaternion<float> attitude, floa
   Mat3x3F R = attitude.RotationMatrix_IwrtB();
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
-    pqrCmd = attitude.ToEulerRPY();
-    float c = -collThrustCmd / mass;
-    float b_x_c_target = accelCmd[0] / c;
-    float b_y_c_target = accelCmd[1] / c;
-    float b_x = R[0,2];
-    float b_x_err = b_x_c_target - b_x;
-    float b_x_p_term = pqrCmd[3] * b_x_err;
+
+    float c = collThrustCmd / mass;
+    float b_x_c_target = accelCmd.x / c;
+    float b_y_c_target = accelCmd.y / c;
+    float b_x = R(0,2);
+    float b_x_err = (b_x_c_target - b_x);
+    float b_x_p_term = (kpBank * b_x_err);
     
-    float b_y = rot_mat[1,2];
-    float b_y_err = b_y_c_target - b_y;
-    float b_y_p_term = pqrCmd[0] * b_y_err;
+    float b_y = R(1,2);
+    float b_y_err = (b_y_c_target - b_y);
+    float b_y_p_term = kpBank * b_y_err;
     
     float b_x_commanded_dot = b_x_p_term;
     float b_y_commanded_dot = b_y_p_term;
     
-    rot_mat1=np.array([[rot_mat[1,0],-rot_mat[0,0]],[rot_mat[1,1],-rot_mat[0,1]]])/rot_mat[2,2]
+    Mat3x3F rot_mat1;
+    rot_mat1(0,0) = R(1,0);
+    rot_mat1(0,1) = -R(0,0);
+    rot_mat1(1,0) = R(1,1);
+    rot_mat1(1,1) = -R(0,1);
+    rot_mat1 = rot_mat1 / R(2,2);
+    V3F commanded;
+    commanded.x = b_x_commanded_dot;
+    commanded.y = b_y_commanded_dot;
+    V3F rot_rate = rot_mat1 * commanded;
+    pqrCmd.x = rot_rate.x;
+    pqrCmd.y = rot_rate.y;
+    pqrCmd.z = 0;
     
-    rot_rate = np.matmul(rot_mat1,np.array([b_x_commanded_dot,b_y_commanded_dot]).T)
-    p_c = rot_rate[0]
-    q_c = rot_rate[1]
-    
-    return np.array([p_c, q_c])
-
 
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
@@ -206,11 +210,28 @@ float QuadControl::AltitudeControl(float posZCmd, float velZCmd, float posZ, flo
   float thrust = 0;
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+ 
+  float z_target = posZCmd;
+  float z_dot_target = velZCmd;
+  float z_actual = posZ;
+  float z_dot_actual = velZ;
+  integratedAltitudeError = integratedAltitudeError + (z_target - z_actual) * dt;
+  float z_dot_dot_target = accelZCmd;
 
+  float u_bar_1 = kpPosZ * (z_target - z_actual) + kpVelZ * (z_dot_target - z_dot_actual) + KiPosZ * integratedAltitudeError + z_dot_dot_target;
+  float b = R(2,2);
+  float c = (u_bar_1 - (-9.8)) / b;
+  float c_constrain = CONSTRAIN(c, -maxAscentRate / dt, maxDescentRate / dt);
+  thrust = -c_constrain * mass;
+ 
+//  printf("%s\n", thrust);
+//  a = np.clip(thrust, 0.0, 10)
+//  print("App", a)
+  //return a
 
 
   /////////////////////////////// END STUDENT CODE ////////////////////////////
-  
+
   return thrust;
 }
 
@@ -240,7 +261,25 @@ V3F QuadControl::LateralPositionControl(V3F posCmd, V3F velCmd, V3F pos, V3F vel
   posCmd.z = pos.z;
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
-
+    
+    float x_target = posCmd.x;
+    float y_target = posCmd.y;
+    float x_dot_target = CONSTRAIN(velCmd.x, -maxSpeedXY, maxSpeedXY);
+    float y_dot_target = CONSTRAIN(velCmd.y, -maxSpeedXY, maxSpeedXY);
+    float x_actual = pos.x;
+    float y_actual = pos.y;
+    float x_dot_actual = vel.x;
+    float y_dot_actual = vel.y;
+    float x_dot_dot_target = accelCmd.x;
+    float y_dot_dot_target = accelCmd.y;
+ 
+    float x_commanded = kpPosXY * (x_target - x_actual) + kpVelXY * (x_dot_target - x_dot_actual) + x_dot_dot_target;
+    float y_commanded = kpPosXY * (y_target - y_actual) + kpPosXY * (y_dot_target - y_dot_actual) + y_dot_dot_target;
+    float x_constr = -CONSTRAIN(x_commanded, -maxAccelXY, maxAccelXY);
+    float y_constr = -CONSTRAIN(y_commanded, -maxAccelXY, maxAccelXY);
+    accelCmd.x = x_constr;
+    accelCmd.y = y_constr;
+    accelCmd.x = 0;
   
 
   /////////////////////////////// END STUDENT CODE ////////////////////////////
