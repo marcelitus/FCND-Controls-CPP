@@ -49,7 +49,7 @@ These controls are very similar to what we did in Excercise 5 of the lessosn. In
 ### LateralPositionControl ###
 
 Here, instead of doing calculations for each x, y component I used the V3F directly. It is an efficient way to calculate it.
-I constrained velociy using maxSpeedXY:
+I constrained velocity using maxSpeedXY:
 
   velCmd.x = CONSTRAIN(velCmd.x, -maxSpeedXY, maxSpeedXY);
   velCmd.y = CONSTRAIN(velCmd.y, -maxSpeedXY, maxSpeedXY);
